@@ -16,6 +16,18 @@ def csv_format(traj, gripper):
         res.append(newline)
     return res
 
+def get_T_N(T1, T2, speed, freq):
+    # Linear distance between 2 transformation matrices
+    p1 = T1[0:3,3]
+    p2 = T2[0:3,3]
+    dist = np.linalg.norm(p2-p1)
+    print("Dist:", dist)
+    T = round(dist/speed, 2) # int(np.ceil(speed*dist))
+    print("T:", T)
+    N = int(T*freq)
+    print("N:", N)
+    return T, N
+
 def TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k):
     """
     Generates trajectory
@@ -33,48 +45,78 @@ def TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, 
                of the end effector frame e relative to s at an instant in time, plus the gripper 
                state (0, 1).
     """
-    # 1. Tse_init to Tce_standoff
-    Tf = 5
-    N = 100
+    # Use 5th order polynomial
     method = 5
+    # Gripper state (starts open)
     gripper = 0
-    # Want: Standoff position in s frame. Tse_standoff
+    # Time to close the gripper
+    gripper_close = 0.625
+    # With current implemenation going up/down to standoff is super fast. Slow it down a bit
+    standoff_scale = 5
+
+    # Speed of arm in m/s
+    speed = 0.5 
+    # Sampling frequency in points/s
+    freq = 100*k 
+    # 1. Go from Tse_init to Tse_standoff
+    print("\nSTEP 1")
     Tse_standoff = Tsc_init@Tce_standoff
-    traj1 = mr.ScrewTrajectory(Tse_init, Tse_standoff, Tf, N, method)
+    T1, N1 = get_T_N(Tse_init, Tse_standoff, speed, freq)
+    traj1 = mr.ScrewTrajectory(Tse_init, Tse_standoff, T1, N1, method)
     traj1_csv = csv_format(traj1, gripper)
 
     # 2. Go to grasp position. Tse_grasp
+    print("\nSTEP 2")
     Tse_grasp = Tsc_init@Tce_grasp
-    traj2 = mr.CartesianTrajectory(Tse_standoff, Tse_grasp, Tf, N, method)
+    T2, N2 = get_T_N(Tse_standoff, Tse_grasp, speed, freq)
+    traj2 = mr.CartesianTrajectory(Tse_standoff, Tse_grasp, T2*standoff_scale, N2*standoff_scale, method)
     traj2_csv = csv_format(traj2, gripper)
 
     # 3. Grasp
+    print("\nSTEP 3")
     gripper = 1
+    T3 = round(gripper_close*1.5,2)
+    N3 = int(T3*freq)
+    traj3 = mr.CartesianTrajectory(Tse_grasp, Tse_grasp, T3, N3, method)
+    traj3_csv = csv_format(traj3, gripper)
 
     # 4. Go back to standoff position Tse_standoff
-    traj4 = mr.CartesianTrajectory(Tse_grasp, Tse_standoff, Tf, N, method)
+    print("\nSTEP 4")
+    T4, N4 = get_T_N(Tse_grasp, Tse_standoff, speed, freq)
+    traj4 = mr.CartesianTrajectory(Tse_grasp, Tse_standoff, T4*standoff_scale, N4*standoff_scale, method)
     traj4_csv = csv_format(traj4, gripper)
 
     # 5. New standoff
+    print("\nSTEP 5")
     Tse_standoff_final = Tsc_final@Tce_standoff
-    traj5 = mr.ScrewTrajectory(Tse_standoff, Tse_standoff_final, Tf, N, method)
+    T5, N5 = get_T_N(Tse_standoff, Tse_standoff_final, speed, freq)
+    traj5 = mr.ScrewTrajectory(Tse_standoff, Tse_standoff_final, T5, N5, method)
     traj5_csv = csv_format(traj5, gripper)
 
     # 6. Go down
+    print("\nSTEP 6")
     Tse_grasp_final = Tsc_final@Tce_grasp
-    traj6 = mr.ScrewTrajectory(Tse_standoff_final, Tse_grasp_final, Tf, N, method)
+    T6, N6 = get_T_N(Tse_standoff_final, Tse_grasp_final, speed, freq)
+    traj6 = mr.ScrewTrajectory(Tse_standoff_final, Tse_grasp_final, T6*standoff_scale, N6*standoff_scale, method)
     traj6_csv = csv_format(traj6, gripper)
 
     # 7. Ungrasp
+    print("\nSTEP 7")
     gripper = 0
-
-    # 8. Go back to standoff
-    traj7 = mr.ScrewTrajectory(Tse_grasp_final, Tse_standoff_final, Tf, N, method)
+    T7 = round(gripper_close*1.5,2)
+    N7 = int(T7*freq)
+    traj7 = mr.CartesianTrajectory(Tse_grasp_final, Tse_grasp_final, T7, N7, method)
     traj7_csv = csv_format(traj7, gripper)
 
-    traj_csv = traj1_csv+traj2_csv+traj4_csv+traj5_csv+traj6_csv+traj7_csv
+    # 8. Go back to standoff
+    print("\nSTEP 8")
+    T8, N8 = get_T_N(Tse_grasp_final, Tse_standoff_final, speed, freq)
+    traj8 = mr.ScrewTrajectory(Tse_grasp_final, Tse_standoff_final, T8*standoff_scale, N8*standoff_scale, method)
+    traj8_csv = csv_format(traj8, gripper)
+
+    traj_csv = traj1_csv+traj2_csv+traj3_csv+traj4_csv+traj5_csv+traj6_csv+traj7_csv+traj8_csv
     np.savetxt('test.csv', np.array(traj_csv), fmt='%10.5f', delimiter=',')
-    return traj2
+    return traj_csv
 
 # Arm initial position
 Tse_init = np.array([[0, 0, 1, 0],
@@ -94,18 +136,23 @@ Tsc_final = np.array([[0, 1, 0, 0],
                       [0, 0, 1, 0],
                       [0, 0, 0, 1]])
 
+# Pi/2: goes in parallel to floor. 
+# Add an additional pi/4 to have it go in at a 45 degree angle. 
+theta = np.pi/2 + np.pi/4.
+
 # Grasp position relative to cube: 0 offsett
-Tce_grasp = np.array([[0, 0, 1, 0],
+Tce_grasp = np.array([[np.cos(theta), 0, np.sin(theta), 0],
                       [0, 1, 0, 0],
-                      [-1, 0, 0, 0.025],
+                      [-np.sin(theta), 0, np.cos(theta), 0.025],
                       [0, 0, 0, 1]])
 
-# Standoff position above cube
-# later: change angle to 45 deg so it doesn't go in straight
-Tce_standoff = np.array([[0, 0, 1, 0],
-                         [0, 1, 0, 0],
-                         [-1, 0, 0, 0.2],
-                         [0, 0, 0, 1]])
+height = 0.1
+Tce_standoff = np.array([[np.cos(theta), 0, np.sin(theta), 0],
+                      [0, 1, 0, 0],
+                      [-np.sin(theta), 0, np.cos(theta), 0.025+height],
+                      [0, 0, 0, 1]])
+                         
 
 k = 1
-res = TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
+
+traj = TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
