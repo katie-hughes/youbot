@@ -6,8 +6,27 @@ python3 milestone2.py
 import modern_robotics as mr
 import numpy as np
 
+np.set_printoptions(linewidth=np.inf)
+
 
 # MILESTONE 1
+
+wheel_rad = 0.0475
+l = 0.47/2.
+w = 0.3/2.
+# Got this from eq 13.10 from the textbook. Now realizing it is irrelevant :(
+H0 = (1./wheel_rad) * np.array([[-l-w, 1, -1],
+                                [l+w, 1, 1],
+                                [l+w, 1, -1],
+                                [-l-w, 1, 1]])
+
+# Eq 13.33: Vb = F * deltaTheta
+F = (wheel_rad/4.) * np.array([[-1./(l+w), 1./(l+w), 1./(l+w), -1./(l+w)],
+                               [1, 1, 1, 1],
+                               [-1, 1, -1, 1]])
+
+print(f"F: {F}")
+
 
 def NextState(current_config, controls, dt, joint_threshold):
     """
@@ -15,8 +34,9 @@ def NextState(current_config, controls, dt, joint_threshold):
     
     Args
         current_config: 12 vector representing current configuraiton of the robot.
-            3 variables for the chassis configuration, 5 variables for the arm configuration,
-            and 4 variables for the wheel angles.
+            3 variables for the chassis configuration,
+            5 variables for the arm configuration,
+            4 variables for the wheel angles.
         controls: 9 vector indicating wheel speeds u (4 variables)
             and arm joint speeds thetadot (5 variables)
         dt: timestep (sec)
@@ -25,10 +45,12 @@ def NextState(current_config, controls, dt, joint_threshold):
     Returns:
         new_config: configuration after timestep dt based on euler step
     """
+    # TODO: implement joint threshold
     # Convert to np array to make operations easier
     current_config = np.array(current_config)
     controls = np.array(controls)
     # Extract out specific configs
+    # phi, x, y
     current_chassis_config = current_config[:3]
     current_arm_config = current_config[3:8]
     current_wheel_config = current_config[8:]
@@ -38,14 +60,50 @@ def NextState(current_config, controls, dt, joint_threshold):
     # Compute new configs
     new_arm_config = current_arm_config + arm_speeds*dt
     new_wheel_config = current_wheel_config + wheel_speeds*dt
-    # Calculate based on odometry
-    new_chassis_config = current_chassis_config
+    # TODO Calculate based on odometry
+    phi = current_chassis_config[0]
+    x = current_chassis_config[1]
+    y = current_chassis_config[2]
+    delta_theta = wheel_speeds*dt
+    Vb = F@delta_theta
+    # print(f"VB: {Vb}")
+    wbz = Vb[0]
+    vbx = Vb[1]
+    vby = Vb[2]
+    # Follow eq. 13.35
+    if wbz == 0:
+        delta_qb = np.array([0, vbx, vby])
+    else:
+        delta_qb = np.array([wbz,
+                            (vbx*np.sin(wbz) + vby(np.cos(wbz)-1))/wbz
+                            (vby*np.sin(wbz) + vbx(1-np.cos(wbz)))/wbz])
+    # print(f"Delta qb {delta_qb}")
+    delta_q = np.array([[1, 0, 0],
+                        [0, np.cos(phi), -np.sin(phi)],
+                        [0, np.sin(phi), np.cos(phi)]]) @ delta_qb
+    # print(f"Delta q {delta_q}")
+    # Vb6 = np.concatenate([[0,0],Vb,[0]])
+    # print(f"Vb6: {Vb6}")
+    # Tbbprime = mr.MatrixExp6(mr.VecTose3(Vb6))
+    # print(f"Tbbprime: {Tbbprime}")
+    
+    new_chassis_config = current_chassis_config+delta_q
+    # print(f"NEW chassis: {new_chassis_config}")
     # Combine back together
     return np.concatenate([new_chassis_config, new_arm_config, new_wheel_config])
 
+# Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+#                     [np.sin(phi), np.cos(phi), 0, y],
+#                     [0, 0, 1, 0.0963],
+#                     [0, 0, 0, 1]])
 
 dt = 0.01
+config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+controls = [10, 10, 10, 10, 1, 1, 1, 1, 1]
+joint_threshold = 100
 for i in range(0,100):
+    config = NextState(config,controls,dt,joint_threshold)
+    print(config)
 
 
 
