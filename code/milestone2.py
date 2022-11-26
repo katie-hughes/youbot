@@ -75,8 +75,8 @@ def NextState(current_config, controls, dt, joint_threshold):
         delta_qb = np.array([0, vbx, vby])
     else:
         delta_qb = np.array([wbz,
-                            (vbx*np.sin(wbz) + vby(np.cos(wbz)-1))/wbz
-                            (vby*np.sin(wbz) + vbx(1-np.cos(wbz)))/wbz])
+                            (vbx*np.sin(wbz) + vby*(np.cos(wbz)-1))/wbz,
+                            (vby*np.sin(wbz) + vbx*(1-np.cos(wbz)))/wbz])
     # print(f"Delta qb {delta_qb}")
     delta_q = np.array([[1, 0, 0],
                         [0, np.cos(phi), -np.sin(phi)],
@@ -102,7 +102,7 @@ configs = []
 dt = 0.01
 config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 configs.append(np.concatenate([config, [0]]))
-controls = [-10, 10, -10, 10, 0, 0, 0, 0, 0]
+controls = [-10, 10, 10, -10, 0, 0, 0, 0, 0]
 joint_threshold = 100
 for i in range(0,100):
     config = NextState(config,controls,dt,joint_threshold)
