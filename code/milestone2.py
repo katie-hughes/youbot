@@ -97,14 +97,19 @@ def NextState(current_config, controls, dt, joint_threshold):
 #                     [0, 0, 1, 0.0963],
 #                     [0, 0, 0, 1]])
 
+configs = []
+
 dt = 0.01
 config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-controls = [10, 10, 10, 10, 1, 1, 1, 1, 1]
+configs.append(np.concatenate([config, [0]]))
+controls = [-10, 10, -10, 10, 0, 0, 0, 0, 0]
 joint_threshold = 100
 for i in range(0,100):
     config = NextState(config,controls,dt,joint_threshold)
     print(config)
+    configs.append(np.concatenate([config, [0]]))
 
+np.savetxt('movement.csv', np.array(configs), fmt='%10.5f', delimiter=',')
 
 
 # MILESTONE 2
