@@ -6,6 +6,7 @@ python3 milestone2.py
 import modern_robotics as mr
 import numpy as np
 
+np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
 
 
@@ -77,39 +78,28 @@ def NextState(current_config, controls, dt, joint_threshold):
         delta_qb = np.array([wbz,
                             (vbx*np.sin(wbz) + vby*(np.cos(wbz)-1))/wbz,
                             (vby*np.sin(wbz) + vbx*(1-np.cos(wbz)))/wbz])
-    # print(f"Delta qb {delta_qb}")
     delta_q = np.array([[1, 0, 0],
                         [0, np.cos(phi), -np.sin(phi)],
                         [0, np.sin(phi), np.cos(phi)]]) @ delta_qb
-    # print(f"Delta q {delta_q}")
-    # Vb6 = np.concatenate([[0,0],Vb,[0]])
-    # print(f"Vb6: {Vb6}")
-    # Tbbprime = mr.MatrixExp6(mr.VecTose3(Vb6))
-    # print(f"Tbbprime: {Tbbprime}")
-    
     new_chassis_config = current_chassis_config+delta_q
     # print(f"NEW chassis: {new_chassis_config}")
     # Combine back together
     return np.concatenate([new_chassis_config, new_arm_config, new_wheel_config])
 
-# Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
-#                     [np.sin(phi), np.cos(phi), 0, y],
-#                     [0, 0, 1, 0.0963],
-#                     [0, 0, 0, 1]])
 
-configs = []
+# configs = []
 
-dt = 0.01
-config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-configs.append(np.concatenate([config, [0]]))
-controls = [-10, 10, 10, -10, 0, 0, 0, 0, 0]
-joint_threshold = 100
-for i in range(0,100):
-    config = NextState(config,controls,dt,joint_threshold)
-    print(config)
-    configs.append(np.concatenate([config, [0]]))
+# dt = 0.01
+# config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+# configs.append(np.concatenate([config, [0]]))
+# controls = [-10, 10, 10, -10, 0, 0, 0, 0, 0]
+# joint_threshold = 100
+# for i in range(0,100):
+#     config = NextState(config,controls,dt,joint_threshold)
+#     print(config)
+#     configs.append(np.concatenate([config, [0]]))
 
-np.savetxt('movement.csv', np.array(configs), fmt='%10.5f', delimiter=',')
+# np.savetxt('movement.csv', np.array(configs), fmt='%10.5f', delimiter=',')
 
 
 # MILESTONE 2
@@ -266,3 +256,114 @@ Tce_standoff = np.array([[np.cos(theta), 0, np.sin(theta), 0],
 k = 1
 
 # traj = TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
+
+
+# MILESTONE 3
+
+def FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt):
+    """
+    Feedforward control
+    
+    args:
+        X: current actual end effector configuration
+        Xd: current end effector reference configuration (desired)
+        Xd_next: End effector reference configuration at the next timestep in the reference
+            trajectory, at a time dt later.
+        Kp: PI gain matrix
+        Ki: PI gain matrix
+        dt: timestep between reference trajectory configurations
+    returns:
+        V: commanded end effector twist in end effector frame
+    """
+    Vd = mr.se3ToVec((1./dt)*mr.MatrixLog6(mr.TransInv(Xd)@Xd_next))
+    # Xerr extracted from log(X^-1 * Xd)
+    Xerr = mr.se3ToVec(mr.MatrixLog6(mr.TransInv(X)@Xd))
+    feedforward = mr.Adjoint(mr.TransInv(X)@Xd)@Vd
+    P_term = Kp@Xerr
+    # I feel like this is wrong...
+    I_term = Ki@(Xerr*dt)
+    V = feedforward + P_term + I_term
+    print(f"VD: {Vd}")
+    print(f"Feedforward term: {feedforward}")
+    print(f"XERR: {Xerr}")
+    print(f"P: {P_term}")
+    print(f"I: {I_term}")
+    print(f"V: {V}")
+    return V
+
+
+Xd = np.array([[0, 0, 1, 0.5],
+               [0, 1, 0, 0],
+               [-1, 0, 0, 0.5],
+               [0, 0, 0, 1]])
+Xd_next = np.array([[0, 0, 1, 0.6],
+                    [0, 1, 0, 0],
+                    [-1, 0, 0, 0.3],
+                    [0, 0, 0, 1]])
+
+# Supposed to get X from config.
+# phi, x, y, theta1-5
+config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
+x = config[1]
+y = config[2]
+phi = config[0]
+Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+                    [np.sin(phi), np.cos(phi), 0, y],
+                    [0, 0, 1, 0.0963],
+                    [0, 0, 0, 1]])
+# But just plugging in this instead
+X = np.array([[0.170, 0, 0.985, 0.387],
+              [0, 1, 0, 0],
+              [-0.985, 0, 0.170, 0.570],
+              [0, 0, 0, 1]])
+
+# Kp = np.zeros((6,6))
+Kp =  np.identity(6)
+Ki = np.zeros((6,6))
+
+print("\n\nCONTROLS")
+V = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
+
+M0e = np.array([[1, 0, 0, 0.033],
+                [0, 1, 0, 0],
+                [0, 0, 1, 0.6546],
+                [0, 0, 0, 1]])
+
+B1 = np.array([0, 0, 1, 0, 0.033, 0])
+B2 = np.array([0, -1, 0, -0.5076, 0, 0])
+B3 = np.array([0, -1, 0, -0.3526, 0, 0])
+B4 = np.array([0, -1, 0, -0.2176, 0, 0])
+B5 = np.array([0, 0, 1, 0, 0, 0])
+
+Blist = np.array([B1, B2, B3, B4, B5]).T
+
+
+thetalist = config[3:]
+print(f"Thetalist:{thetalist}")
+Jacobian_arm = mr.JacobianBody(Blist, thetalist)
+print(f"Jacobian arm:\n{Jacobian_arm}")
+print(Jacobian_arm.shape)
+
+T0e = M0e
+
+Tb0 = np.array([[1, 0, 0, 0.1622],
+                [0, 1, 0, 0],
+                [0, 0, 1, 0.0026],
+                [0, 0, 0, 1]])
+
+m0 = np.array([0,0,0,0])
+F6 = np.vstack((m0, m0, F, m0))
+
+adjoint_term = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))
+Jacobian_base = adjoint_term@F6
+print(f"Jacobian base:\n{Jacobian_base}")
+print(Jacobian_base.shape)
+
+Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
+print(f"Jacobian\n{Jacobian}")
+print(Jacobian.shape)
+
+# Using formulas from pg 569
+# Je_pseudoinverse = Jacobian.T@np.linalg.inv(Jacobian@Jacobian.T)
+Je_pseudoinverse = np.linalg.pinv(Jacobian)
+# print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
