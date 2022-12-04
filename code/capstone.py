@@ -337,14 +337,13 @@ B5 = np.array([0, 0, 1, 0, 0, 0])
 
 Blist = np.array([B1, B2, B3, B4, B5]).T
 
-
 thetalist = config[3:]
 print(f"Thetalist:{thetalist}")
 Jacobian_arm = mr.JacobianBody(Blist, thetalist)
 print(f"Jacobian arm:\n{Jacobian_arm}")
 print(Jacobian_arm.shape)
 
-T0e = M0e
+T0e = mr.FKinBody(M0e, Blist, thetalist)
 
 Tb0 = np.array([[1, 0, 0, 0.1622],
                 [0, 1, 0, 0],
