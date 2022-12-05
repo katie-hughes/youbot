@@ -27,7 +27,7 @@ F = (wheel_rad/4.) * np.array([[-1./(l+w), 1./(l+w), 1./(l+w), -1./(l+w)],
                                [1, 1, 1, 1],
                                [-1, 1, -1, 1]])
 
-print(f"F: {F}")
+# print(f"F: {F}")
 
 M0e = np.array([[1, 0, 0, 0.033],
                 [0, 1, 0, 0],
@@ -52,8 +52,6 @@ Tb0 = np.array([[1, 0, 0, 0.1622],
 
 Tb0_x = Tb0[0][3]
 Tb0_z = Tb0[2][3]
-
-
 
 m0 = np.array([0,0,0,0])
 F6 = np.vstack((m0, m0, F, m0))
@@ -81,6 +79,13 @@ def NextState(current_config, controls, dt, joint_threshold):
     # Convert to np array to make operations easier
     current_config = np.array(current_config)
     controls = np.array(controls)
+    for i in range(len(controls)):
+        if controls[i] > joint_threshold:
+            print("Speed too large")
+            controls[i] = joint_threshold
+        elif controls[i] < -joint_threshold:
+            print("Speed too small")
+            controls[i] = -joint_threshold
     # Extract out specific configs
     # phi, x, y
     current_chassis_config = current_config[:3]
@@ -159,7 +164,6 @@ def get_T_N(T1, T2, speed, freq):
     dist = np.linalg.norm(p2-p1)
     T = round(dist/speed, 2) 
     N = int(T*freq)
-    print(f"T {T}, N {N}")
     return T, N
 
 
@@ -287,6 +291,7 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     # 1. Go from Tse_init to Tse_standoff
     print("\nSTEP 1: Move to first standoff")
     Tse_standoff = Tsc_init@Tce_standoff
+    print(Tse_standoff)
     T1, N1 = get_T_N(Tse_init, Tse_standoff, speed, freq)
     traj1 = mr.ScrewTrajectory(Tse_init, Tse_standoff, T1, N1, method)
     grip1 = np.full(N1,gripper)
@@ -294,6 +299,7 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     # 2. Go to grasp position. Tse_grasp
     print("\nSTEP 2: Move to grasp")
     Tse_grasp = Tsc_init@Tce_grasp
+    print(Tse_grasp)
     T2, N2 = get_T_N(Tse_standoff, Tse_grasp, speed, freq)
     traj2 = mr.CartesianTrajectory(Tse_standoff, Tse_grasp, T2*standoff_scale, N2*standoff_scale, method)
     grip2 = np.full(N2*standoff_scale,gripper)
@@ -313,15 +319,18 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     grip4 = np.full(N4*standoff_scale,gripper)
 
     # 5. New standoff
+    scale = 3
     print("\nSTEP 5: Move to second standoff")
     Tse_standoff_final = Tsc_final@Tce_standoff
+    print(Tse_standoff_final)
     T5, N5 = get_T_N(Tse_standoff, Tse_standoff_final, speed, freq)
-    traj5 = mr.ScrewTrajectory(Tse_standoff, Tse_standoff_final, T5, N5, method)
-    grip5 = np.full(N5,gripper)
+    traj5 = mr.CartesianTrajectory(Tse_standoff, Tse_standoff_final, T5*scale, N5*scale, method)
+    grip5 = np.full(N5*scale,gripper)
 
     # 6. Go down
     print("\nSTEP 6: Place the brick down")
     Tse_grasp_final = Tsc_final@Tce_grasp
+    print(Tse_grasp_final)
     T6, N6 = get_T_N(Tse_standoff_final, Tse_grasp_final, speed, freq)
     traj6 = mr.ScrewTrajectory(Tse_standoff_final, Tse_grasp_final, T6*standoff_scale, N6*standoff_scale, method)
     grip6 = np.full(N6*standoff_scale,gripper)
@@ -358,6 +367,10 @@ Tsc_init = np.array([[1, 0, 0, 1],
                      [0, 0, 0, 1]])
 
 # Cube final position
+# Tsc_final = np.array([[0, 1, 0, 0],
+#                       [-1, 0, 0, -1],
+#                       [0, 0, 1, 0],
+#                       [0, 0, 0, 1]])
 Tsc_final = np.array([[0, 1, 0, 0],
                       [-1, 0, 0, -1],
                       [0, 0, 1, 0],
@@ -409,19 +422,19 @@ def FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt):
     # I feel like this is wrong...
     I_term = Ki@(Xerr*dt)
     V = feedforward + P_term + I_term
-    print(f"VD: {Vd}")
-    print(f"Feedforward term: {feedforward}")
-    print(f"XERR: {Xerr}")
-    print(f"P: {P_term}")
-    print(f"I: {I_term}")
-    print(f"V: {V}")
+    # print(f"VD: {Vd}")
+    # print(f"Feedforward term: {feedforward}")
+    # print(f"XERR: {Xerr}")
+    # print(f"P: {P_term}")
+    # print(f"I: {I_term}")
+    # print(f"V: {V}")
     return V, Xerr
 
 
 # Kp = np.zeros((6,6))
-Kp = 2*np.identity(6)
+Kp = 50*np.identity(6)
 # Ki = np.zeros((6,6))
-Ki = 1e-2*np.identity(6)
+Ki = 10*np.identity(6)
 
 
 # # config: phi, x, y, theta1-5
@@ -477,16 +490,27 @@ Ki = 1e-2*np.identity(6)
 
 def get_X(config):
     # Take in 13 vector return X
+    print(f"Config:\n{config}")
     x = config[1]
     y = config[2]
     phi = config[0]
     thetalist = config[3:8]
-    # print(f"Thetalist:{thetalist}")
-    Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x+Tb0_x+M0e_x],
+    print(f"Thetalist:{thetalist}")
+    # Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x+Tb0_x+M0e_x],
+    #                 [np.sin(phi), np.cos(phi), 0, y],
+    #                 [0, 0, 1, 0.0963+Tb0_z+M0e_z],
+    #                 [0, 0, 0, 1]])
+    Tsb = np.array([[np.cos(phi), -np.sin(phi), 0, x],
                     [np.sin(phi), np.cos(phi), 0, y],
-                    [0, 0, 1, 0.0963+Tb0_z+M0e_z],
+                    [0, 0, 1, 0.0963],
                     [0, 0, 0, 1]])
-    X=mr.FKinBody(Tsb, Blist, thetalist)
+    # Tb0 is a constant. So is M0e
+    # T0e is not!
+    T0e = mr.FKinBody(M0e, Blist, thetalist)
+    # From pg 548 of book
+    X = Tsb@Tb0@T0e
+    # print(f"Tsb:\n{Tsb}")
+    # X=mr.FKinBody(Tsb, Blist, thetalist)
     return X
 
 dt = 0.01
@@ -494,20 +518,14 @@ joint_threshold = 100
 
 
 traj,grips = TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
-print("\n\nPRINTINGCONFIG\n\n")
 n = len(traj)
 # n = 20
 saved_configs = []
 xerrs = []
-# Starting configuration is first in traj
-# print(f"traj 0\n{traj[0]}")
-# thetalist = [0,0,0,-np.pi/2,0]
-# startT = np.array(traj[0])
-# config1 = mr.IKinBody(Blist,M0e,startT,thetalist,0.01,0.01)
-# print(f"Config 1??\n{config1}")
-# T1 = mr.FKinBody(M0e,Blist,thetalist)
-# print(f"T1: {T1}")
-config = [0,0,0,0,0,-np.pi/2,0,0,0,0,0,0,0]
+theta2 = 0
+theta3 = 0
+theta4 = -1.57
+config = [0,-0.25,0,0,theta2,theta3,theta4,0,0,0,0,0,0]
 print(f"START\n{config}")
 saved_configs.append(config)
 for i in range(0,n-1):
@@ -516,7 +534,7 @@ for i in range(0,n-1):
     Xd = traj[i]
     Xd_next = traj[i+1]
     print(f"Xd:\n{Xd}")
-    print(f"Xd_next:\n{Xd_next}")
+    # print(f"Xd_next:\n{Xd_next}")
     # Find X of current config.
     X = get_X(config)
     print(f"X:\n{X}")
@@ -534,18 +552,35 @@ for i in range(0,n-1):
     controls = Je_pseudoinverse @ V
     # Go to next state. Update config with NextState
     config[12] = grips[i]
-    print(f"Config:\n{config}")
-    print(f"Controls:\n{controls}")
+    # print(f"Config:\n{config}")
+    # print(f"Controls:\n{controls}")
     config = NextState(config, controls, dt, joint_threshold)
-    print(f"Config:\n{config}")
+    print(f"{i}\t{config}")
     saved_configs.append(config)
     xerrs.append(Xerr)
 
-np.savetxt('please.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
-
+np.savetxt('pls.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
 
 xerrs = np.array(xerrs).T
-for n,i in enumerate(xerrs):
-    plt.plot(i,label=str(n))
-plt.legend()
+
+np.savetxt('errors.csv', xerrs.T, fmt='%10.5f', delimiter=',')
+
+fig, axs = plt.subplots(2, 1)
+
+axs[0].plot(xerrs[0],label='Roll err')
+axs[0].plot(xerrs[1],label='Pitch err')
+axs[0].plot(xerrs[2],label='Yaw err')
+axs[0].legend()
+axs[0].set(xlabel='iteration',ylabel='radians')
+axs[0].set_title("Angular Error")
+
+axs[1].plot(xerrs[3],label='X err')
+axs[1].plot(xerrs[4],label='Y err')
+axs[1].plot(xerrs[5],label='Z err')
+axs[1].legend()
+axs[1].set(xlabel='iteration',ylabel='radians')
+axs[1].set_title("Linear Error")
+
+fig.tight_layout()
+plt.savefig('errors.png')
 plt.show()
