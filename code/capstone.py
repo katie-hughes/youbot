@@ -28,16 +28,46 @@ F = (wheel_rad/4.) * np.array([[-1./(l+w), 1./(l+w), 1./(l+w), -1./(l+w)],
 
 print(f"F: {F}")
 
+M0e = np.array([[1, 0, 0, 0.033],
+                [0, 1, 0, 0],
+                [0, 0, 1, 0.6546],
+                [0, 0, 0, 1]])
+
+M0e_x = M0e[0][3]
+M0e_z = M0e[2][3]
+
+B1 = np.array([0, 0, 1, 0, 0.033, 0])
+B2 = np.array([0, -1, 0, -0.5076, 0, 0])
+B3 = np.array([0, -1, 0, -0.3526, 0, 0])
+B4 = np.array([0, -1, 0, -0.2176, 0, 0])
+B5 = np.array([0, 0, 1, 0, 0, 0])
+
+Blist = np.array([B1, B2, B3, B4, B5]).T
+
+Tb0 = np.array([[1, 0, 0, 0.1622],
+                [0, 1, 0, 0],
+                [0, 0, 1, 0.0026],
+                [0, 0, 0, 1]])
+
+Tb0_x = Tb0[0][3]
+Tb0_z = Tb0[2][3]
+
+
+
+m0 = np.array([0,0,0,0])
+F6 = np.vstack((m0, m0, F, m0))
+
 
 def NextState(current_config, controls, dt, joint_threshold):
     """
     Steps the robot forward
     
     Args
-        current_config: 12 vector representing current configuraiton of the robot.
+        current_config: 13 vector representing current configuraiton of the robot.
             3 variables for the chassis configuration,
             5 variables for the arm configuration,
-            4 variables for the wheel angles.
+            4 variables for the wheel angles,
+            1 for gripper open/closed
         controls: 9 vector indicating wheel speeds u (4 variables)
             and arm joint speeds thetadot (5 variables)
         dt: timestep (sec)
@@ -54,7 +84,8 @@ def NextState(current_config, controls, dt, joint_threshold):
     # phi, x, y
     current_chassis_config = current_config[:3]
     current_arm_config = current_config[3:8]
-    current_wheel_config = current_config[8:]
+    current_wheel_config = current_config[8:12]
+    current_gripper_config = [current_config[12]]
     # Extract out speeds
     wheel_speeds = controls[:4]
     arm_speeds = controls[4:]
@@ -84,7 +115,10 @@ def NextState(current_config, controls, dt, joint_threshold):
     new_chassis_config = current_chassis_config+delta_q
     # print(f"NEW chassis: {new_chassis_config}")
     # Combine back together
-    return np.concatenate([new_chassis_config, new_arm_config, new_wheel_config])
+    return np.concatenate([new_chassis_config,
+                           new_arm_config,
+                           new_wheel_config,
+                           current_gripper_config])
 
 
 # configs = []
@@ -124,6 +158,7 @@ def get_T_N(T1, T2, speed, freq):
     dist = np.linalg.norm(p2-p1)
     T = round(dist/speed, 2) 
     N = int(T*freq)
+    print(f"T {T}, N {N}")
     return T, N
 
 
@@ -217,6 +252,98 @@ def TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, 
     np.savetxt('trajectory.csv', np.array(traj_csv), fmt='%10.5f', delimiter=',')
     return traj_csv
 
+
+def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k):
+    """
+    Generates trajectory
+
+    Args:
+        Tse_init: Initial configuration of the end effector in the reference trajectory
+        Tsc_init: Cube's initial configuration
+        Tsc_final: Cube's desired final configuration
+        Tce_grasp: End effector's configuration relative to cube when grasping cube 
+        Tce_standoff: End effector's standoff configuration above the cube, relative to the cube
+        k: Number of trajectory configurations per 0.01 seconds. Must be 1 or greater. 
+    Returns: 
+        traj : A representation of the N configurations of the end-effector along the entire
+               concatenated 8-segment trajectory. Each point represents a transformation Tse
+               of the end effector frame e relative to s at an instant in time, plus the gripper 
+               state (0, 1).
+    """
+    # Use 5th order polynomial
+    method = 5
+    # Gripper state (starts open)
+    gripper = 0
+    # Time to close the gripper
+    gripper_close = 0.625
+    # With current implemenation going up/down to standoff is super fast. Slow it down a bit
+    standoff_scale = 5
+    # Speed of arm in m/s
+    speed = 0.5 
+    # Sampling frequency in points/s
+    freq = 100*k 
+
+    # 1. Go from Tse_init to Tse_standoff
+    print("\nSTEP 1: Move to first standoff")
+    Tse_standoff = Tsc_init@Tce_standoff
+    T1, N1 = get_T_N(Tse_init, Tse_standoff, speed, freq)
+    traj1 = mr.ScrewTrajectory(Tse_init, Tse_standoff, T1, N1, method)
+    grip1 = np.full(N1,gripper)
+
+    # 2. Go to grasp position. Tse_grasp
+    print("\nSTEP 2: Move to grasp")
+    Tse_grasp = Tsc_init@Tce_grasp
+    T2, N2 = get_T_N(Tse_standoff, Tse_grasp, speed, freq)
+    traj2 = mr.CartesianTrajectory(Tse_standoff, Tse_grasp, T2*standoff_scale, N2*standoff_scale, method)
+    grip2 = np.full(N2*standoff_scale,gripper)
+
+    # 3. Grasp
+    print("\nSTEP 3: Grasp")
+    gripper = 1
+    T3 = round(gripper_close*1.5,2)
+    N3 = int(T3*freq)
+    traj3 = mr.CartesianTrajectory(Tse_grasp, Tse_grasp, T3, N3, method)
+    grip3 = np.full(N3,gripper)
+
+    # 4. Go back to standoff position Tse_standoff
+    print("\nSTEP 4: Move back to standoff")
+    T4, N4 = get_T_N(Tse_grasp, Tse_standoff, speed, freq)
+    traj4 = mr.CartesianTrajectory(Tse_grasp, Tse_standoff, T4*standoff_scale, N4*standoff_scale, method)
+    grip4 = np.full(N4*standoff_scale,gripper)
+
+    # 5. New standoff
+    print("\nSTEP 5: Move to second standoff")
+    Tse_standoff_final = Tsc_final@Tce_standoff
+    T5, N5 = get_T_N(Tse_standoff, Tse_standoff_final, speed, freq)
+    traj5 = mr.ScrewTrajectory(Tse_standoff, Tse_standoff_final, T5, N5, method)
+    grip5 = np.full(N5,gripper)
+
+    # 6. Go down
+    print("\nSTEP 6: Place the brick down")
+    Tse_grasp_final = Tsc_final@Tce_grasp
+    T6, N6 = get_T_N(Tse_standoff_final, Tse_grasp_final, speed, freq)
+    traj6 = mr.ScrewTrajectory(Tse_standoff_final, Tse_grasp_final, T6*standoff_scale, N6*standoff_scale, method)
+    grip6 = np.full(N6*standoff_scale,gripper)
+
+    # 7. Ungrasp
+    print("\nSTEP 7: Release gripper")
+    gripper = 0
+    T7 = round(gripper_close*1.5,2)
+    N7 = int(T7*freq)
+    traj7 = mr.CartesianTrajectory(Tse_grasp_final, Tse_grasp_final, T7, N7, method)
+    grip7 = np.full(N7,gripper)
+
+    # 8. Go back to standoff
+    print("\nSTEP 8: Go back to standoff")
+    T8, N8 = get_T_N(Tse_grasp_final, Tse_standoff_final, speed, freq)
+    traj8 = mr.ScrewTrajectory(Tse_grasp_final, Tse_standoff_final, T8*standoff_scale, N8*standoff_scale, method)
+    grip8 = np.full(N8*standoff_scale,gripper)
+
+    traj = np.concatenate((traj1,traj2,traj3,traj4,traj5,traj6,traj7,traj8))
+    grips = np.concatenate((grip1,grip2,grip3,grip4,grip5,grip6,grip7,grip8))
+    # np.savetxt('trajectory.csv', np.array(traj_csv), fmt='%10.5f', delimiter=',')
+    return traj,grips
+
 # Arm initial position
 Tse_init = np.array([[0, 0, 1, 0],
                      [0, 1, 0, 0],
@@ -255,8 +382,6 @@ Tce_standoff = np.array([[np.cos(theta), 0, np.sin(theta), 0],
                          
 k = 1
 
-# traj = TrajectoryGenerator(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
-
 
 # MILESTONE 3
 
@@ -289,8 +414,32 @@ def FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt):
     print(f"P: {P_term}")
     print(f"I: {I_term}")
     print(f"V: {V}")
-    return V
+    return V, Xerr
 
+
+
+
+# config: phi, x, y, theta1-5
+config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
+x = config[1]
+y = config[2]
+phi = config[0]
+thetalist = config[3:]
+print(f"Thetalist:{thetalist}")
+Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+                    [np.sin(phi), np.cos(phi), 0, y],
+                    [0, 0, 1, 0.0963],
+                    [0, 0, 0, 1]])
+start_T = np.array(Tsb)
+start_T[0][3] += (Tb0_x+M0e_x)
+start_T[2][3] += (Tb0_z+M0e_z)
+X=mr.FKinBody(start_T, Blist, thetalist)
+print(f"X:\n{X}")
+
+Kp = np.zeros((6,6))
+Kp = np.identity(6)
+Ki = np.zeros((6,6))
+# Ki = 1e-3* np.identity(6)
 
 Xd = np.array([[0, 0, 1, 0.5],
                [0, 1, 0, 0],
@@ -301,60 +450,16 @@ Xd_next = np.array([[0, 0, 1, 0.6],
                     [-1, 0, 0, 0.3],
                     [0, 0, 0, 1]])
 
-# Supposed to get X from config.
-# phi, x, y, theta1-5
-config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
-x = config[1]
-y = config[2]
-phi = config[0]
-Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
-                    [np.sin(phi), np.cos(phi), 0, y],
-                    [0, 0, 1, 0.0963],
-                    [0, 0, 0, 1]])
-# But just plugging in this instead
-X = np.array([[0.170, 0, 0.985, 0.387],
-              [0, 1, 0, 0],
-              [-0.985, 0, 0.170, 0.570],
-              [0, 0, 0, 1]])
-
-# Kp = np.zeros((6,6))
-Kp =  np.identity(6)
-Ki = np.zeros((6,6))
-
 print("\n\nCONTROLS")
-V = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
+V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
 
-M0e = np.array([[1, 0, 0, 0.033],
-                [0, 1, 0, 0],
-                [0, 0, 1, 0.6546],
-                [0, 0, 0, 1]])
-
-B1 = np.array([0, 0, 1, 0, 0.033, 0])
-B2 = np.array([0, -1, 0, -0.5076, 0, 0])
-B3 = np.array([0, -1, 0, -0.3526, 0, 0])
-B4 = np.array([0, -1, 0, -0.2176, 0, 0])
-B5 = np.array([0, 0, 1, 0, 0, 0])
-
-Blist = np.array([B1, B2, B3, B4, B5]).T
-
-thetalist = config[3:]
-print(f"Thetalist:{thetalist}")
 Jacobian_arm = mr.JacobianBody(Blist, thetalist)
 print(f"Jacobian arm:\n{Jacobian_arm}")
 print(Jacobian_arm.shape)
 
 T0e = mr.FKinBody(M0e, Blist, thetalist)
 
-Tb0 = np.array([[1, 0, 0, 0.1622],
-                [0, 1, 0, 0],
-                [0, 0, 1, 0.0026],
-                [0, 0, 0, 1]])
-
-m0 = np.array([0,0,0,0])
-F6 = np.vstack((m0, m0, F, m0))
-
-adjoint_term = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))
-Jacobian_base = adjoint_term@F6
+Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
 print(f"Jacobian base:\n{Jacobian_base}")
 print(Jacobian_base.shape)
 
@@ -362,7 +467,77 @@ Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
 print(f"Jacobian\n{Jacobian}")
 print(Jacobian.shape)
 
-# Using formulas from pg 569
-# Je_pseudoinverse = Jacobian.T@np.linalg.inv(Jacobian@Jacobian.T)
 Je_pseudoinverse = np.linalg.pinv(Jacobian)
-# print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
+print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
+new_speeds = Je_pseudoinverse @ V
+print(f"New Speeds:\n{new_speeds}")
+
+
+def get_X(config):
+    # Take in 13 vector return X
+    x = config[1]
+    y = config[2]
+    phi = config[0]
+    thetalist = config[3:8]
+    # print(f"Thetalist:{thetalist}")
+    Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+                    [np.sin(phi), np.cos(phi), 0, y],
+                    [0, 0, 1, 0.0963],
+                    [0, 0, 0, 1]])
+    start_T = np.array(Tsb)
+    start_T[0][3] += (Tb0_x+M0e_x)
+    start_T[2][3] += (Tb0_z+M0e_z)
+    X=mr.FKinBody(start_T, Blist, thetalist)
+    return X
+
+dt = 0.01
+joint_threshold = 100
+
+
+traj,grips = TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
+print("\n\nPRINTINGCONFIG\n\n")
+n = len(traj)
+# n = 20
+saved_configs = []
+# Starting configuration is first in traj
+# print(f"traj 0\n{traj[0]}")
+# thetalist = [0,0,0,-np.pi/2,0]
+# startT = np.array(traj[0])
+# config1 = mr.IKinBody(Blist,M0e,startT,thetalist,0.01,0.01)
+# print(f"Config 1??\n{config1}")
+# T1 = mr.FKinBody(M0e,Blist,thetalist)
+# print(f"T1: {T1}")
+config = [0,0,0,0,0,-np.pi/2,0,0,0,0,0,0,0]
+print(f"START\n{config}")
+saved_configs.append(config)
+for i in range(0,n-1):
+    print('\n')
+    # Find Xd, Xd_next from generated trajectory
+    Xd = traj[i]
+    Xd_next = traj[i+1]
+    print(f"Xd:\n{Xd}")
+    print(f"Xd_next:\n{Xd_next}")
+    # Find X of current config.
+    X = get_X(config)
+    print(f"X:\n{X}")
+    # Calculate new twist based on these Xs
+    V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt)
+    print(f"Xerr:\n{Xerr}")
+    # ISSUE which config should this be
+    thetalist = config[3:8]
+    Jacobian_arm = mr.JacobianBody(Blist, thetalist)
+    T0e = mr.FKinBody(M0e, Blist, thetalist)
+    Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
+    Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
+    Je_pseudoinverse = np.linalg.pinv(Jacobian)
+    # print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
+    controls = Je_pseudoinverse @ V
+    # Go to next state. Update config with NextState
+    config[12] = grips[i]
+    print(f"Config:\n{config}")
+    print(f"Controls:\n{controls}")
+    config = NextState(config, controls, dt, joint_threshold)
+    print(f"Config:\n{config}")
+    saved_configs.append(config)
+
+np.savetxt('please.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
