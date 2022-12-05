@@ -11,7 +11,7 @@ np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
 
 
-# MILESTONE 1
+###################################### MILESTONE 1 #################################################
 
 wheel_rad = 0.0475
 l = 0.47/2.
@@ -87,7 +87,6 @@ def NextState(current_config, controls, dt, joint_threshold):
             print("Speed too small")
             controls[i] = -joint_threshold
     # Extract out specific configs
-    # phi, x, y
     current_chassis_config = current_config[:3]
     current_arm_config = current_config[3:8]
     current_wheel_config = current_config[8:12]
@@ -98,13 +97,9 @@ def NextState(current_config, controls, dt, joint_threshold):
     # Compute new configs
     new_arm_config = current_arm_config + arm_speeds*dt
     new_wheel_config = current_wheel_config + wheel_speeds*dt
-    # TODO Calculate based on odometry
     phi = current_chassis_config[0]
-    x = current_chassis_config[1]
-    y = current_chassis_config[2]
     delta_theta = wheel_speeds*dt
     Vb = F@delta_theta
-    # print(f"VB: {Vb}")
     wbz = Vb[0]
     vbx = Vb[1]
     vby = Vb[2]
@@ -119,30 +114,31 @@ def NextState(current_config, controls, dt, joint_threshold):
                         [0, np.cos(phi), -np.sin(phi)],
                         [0, np.sin(phi), np.cos(phi)]]) @ delta_qb
     new_chassis_config = current_chassis_config+delta_q
-    # print(f"NEW chassis: {new_chassis_config}")
-    # Combine back together
+    # Combine everything back together
     return np.concatenate([new_chassis_config,
                            new_arm_config,
                            new_wheel_config,
                            current_gripper_config])
 
 
-# configs = []
+milestone1 = False
+if milestone1:
+    configs = []
 
-# dt = 0.01
-# config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-# configs.append(np.concatenate([config, [0]]))
-# controls = [-10, 10, 10, -10, 0, 0, 0, 0, 0]
-# joint_threshold = 100
-# for i in range(0,100):
-#     config = NextState(config,controls,dt,joint_threshold)
-#     print(config)
-#     configs.append(np.concatenate([config, [0]]))
+    dt = 0.01
+    config = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    configs.append(np.concatenate([config, [0]]))
+    controls = [-10, 10, 10, -10, 0, 0, 0, 0, 0]
+    joint_threshold = 100
+    for i in range(0,100):
+        config = NextState(config,controls,dt,joint_threshold)
+        print(config)
+        configs.append(np.concatenate([config, [0]]))
 
-# np.savetxt('movement.csv', np.array(configs), fmt='%10.5f', delimiter=',')
+    np.savetxt('movement.csv', np.array(configs), fmt='%10.5f', delimiter=',')
 
 
-# MILESTONE 2
+###################################### MILESTONE 2 #################################################
 
 def csv_format(traj, gripper):
     """Turns the trajectory returned by the mr functions into the scene8 format."""
@@ -319,13 +315,12 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     grip4 = np.full(N4*standoff_scale,gripper)
 
     # 5. New standoff
-    scale = 3
     print("\nSTEP 5: Move to second standoff")
     Tse_standoff_final = Tsc_final@Tce_standoff
     print(Tse_standoff_final)
     T5, N5 = get_T_N(Tse_standoff, Tse_standoff_final, speed, freq)
-    traj5 = mr.CartesianTrajectory(Tse_standoff, Tse_standoff_final, T5*scale, N5*scale, method)
-    grip5 = np.full(N5*scale,gripper)
+    traj5 = mr.ScrewTrajectory(Tse_standoff, Tse_standoff_final, T5, N5, method)
+    grip5 = np.full(N5,gripper)
 
     # 6. Go down
     print("\nSTEP 6: Place the brick down")
@@ -367,10 +362,6 @@ Tsc_init = np.array([[1, 0, 0, 1],
                      [0, 0, 0, 1]])
 
 # Cube final position
-# Tsc_final = np.array([[0, 1, 0, 0],
-#                       [-1, 0, 0, -1],
-#                       [0, 0, 1, 0],
-#                       [0, 0, 0, 1]])
 Tsc_final = np.array([[0, 1, 0, 0],
                       [-1, 0, 0, -1],
                       [0, 0, 1, 0],
@@ -393,11 +384,12 @@ Tce_standoff = np.array([[np.cos(theta), 0, np.sin(theta), 0],
                       [0, 1, 0, 0],
                       [-np.sin(theta), 0, np.cos(theta), 0.025+height],
                       [0, 0, 0, 1]])
-                         
+
 k = 1
 
 
-# MILESTONE 3
+###################################### MILESTONE 3 #################################################
+
 
 def FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt):
     """
@@ -419,103 +411,89 @@ def FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt):
     Xerr = mr.se3ToVec(mr.MatrixLog6(mr.TransInv(X)@Xd))
     feedforward = mr.Adjoint(mr.TransInv(X)@Xd)@Vd
     P_term = Kp@Xerr
-    # I feel like this is wrong...
     I_term = Ki@(Xerr*dt)
     V = feedforward + P_term + I_term
-    # print(f"VD: {Vd}")
-    # print(f"Feedforward term: {feedforward}")
-    # print(f"XERR: {Xerr}")
-    # print(f"P: {P_term}")
-    # print(f"I: {I_term}")
-    # print(f"V: {V}")
     return V, Xerr
 
+milestone3 = False
+if milestone3:
+    # Kp = np.zeros((6,6))
+    Kp = 20*np.identity(6)
+    # Ki = np.zeros((6,6))
+    Ki = 5*np.identity(6)
 
-# Kp = np.zeros((6,6))
-Kp = 50*np.identity(6)
-# Ki = np.zeros((6,6))
-Ki = 10*np.identity(6)
+    # config: phi, x, y, theta1-5
+    config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
+    x = config[1]
+    y = config[2]
+    phi = config[0]
+    thetalist = config[3:]
+    print(f"Thetalist:{thetalist}")
+    Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+                        [np.sin(phi), np.cos(phi), 0, y],
+                        [0, 0, 1, 0.0963],
+                        [0, 0, 0, 1]])
+    start_T = np.array(Tsb)
+    start_T[0][3] += (Tb0_x+M0e_x)
+    start_T[2][3] += (Tb0_z+M0e_z)
+    X=mr.FKinBody(start_T, Blist, thetalist)
+    print(f"X:\n{X}")
 
+    Xd = np.array([[0, 0, 1, 0.5],
+                   [0, 1, 0, 0],
+                   [-1, 0, 0, 0.5],
+                   [0, 0, 0, 1]])
+    Xd_next = np.array([[0, 0, 1, 0.6],
+                        [0, 1, 0, 0],
+                        [-1, 0, 0, 0.3],
+                        [0, 0, 0, 1]])
 
-# # config: phi, x, y, theta1-5
-# config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
-# x = config[1]
-# y = config[2]
-# phi = config[0]
-# thetalist = config[3:]
-# print(f"Thetalist:{thetalist}")
-# Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
-#                     [np.sin(phi), np.cos(phi), 0, y],
-#                     [0, 0, 1, 0.0963],
-#                     [0, 0, 0, 1]])
-# start_T = np.array(Tsb)
-# start_T[0][3] += (Tb0_x+M0e_x)
-# start_T[2][3] += (Tb0_z+M0e_z)
-# X=mr.FKinBody(start_T, Blist, thetalist)
-# print(f"X:\n{X}")
+    print("\n\nCONTROLS")
+    V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
 
+    Jacobian_arm = mr.JacobianBody(Blist, thetalist)
+    print(f"Jacobian arm:\n{Jacobian_arm}")
+    print(Jacobian_arm.shape)
 
+    T0e = mr.FKinBody(M0e, Blist, thetalist)
 
-# Xd = np.array([[0, 0, 1, 0.5],
-#                [0, 1, 0, 0],
-#                [-1, 0, 0, 0.5],
-#                [0, 0, 0, 1]])
-# Xd_next = np.array([[0, 0, 1, 0.6],
-#                     [0, 1, 0, 0],
-#                     [-1, 0, 0, 0.3],
-#                     [0, 0, 0, 1]])
+    Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
+    print(f"Jacobian base:\n{Jacobian_base}")
+    print(Jacobian_base.shape)
 
-# print("\n\nCONTROLS")
-# V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
+    Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
+    print(f"Jacobian\n{Jacobian}")
+    print(Jacobian.shape)
 
-# Jacobian_arm = mr.JacobianBody(Blist, thetalist)
-# print(f"Jacobian arm:\n{Jacobian_arm}")
-# print(Jacobian_arm.shape)
+    Je_pseudoinverse = np.linalg.pinv(Jacobian)
+    print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
+    new_speeds = Je_pseudoinverse @ V
+    print(f"New Speeds:\n{new_speeds}")
 
-# T0e = mr.FKinBody(M0e, Blist, thetalist)
-
-# Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
-# print(f"Jacobian base:\n{Jacobian_base}")
-# print(Jacobian_base.shape)
-
-# Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
-# print(f"Jacobian\n{Jacobian}")
-# print(Jacobian.shape)
-
-# Je_pseudoinverse = np.linalg.pinv(Jacobian)
-# print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
-# new_speeds = Je_pseudoinverse @ V
-# print(f"New Speeds:\n{new_speeds}")
-
+###################################### MILESTONE 3 #################################################
 
 def get_X(config):
     # Take in 13 vector return X
-    print(f"Config:\n{config}")
     x = config[1]
     y = config[2]
     phi = config[0]
     thetalist = config[3:8]
-    print(f"Thetalist:{thetalist}")
-    # Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x+Tb0_x+M0e_x],
-    #                 [np.sin(phi), np.cos(phi), 0, y],
-    #                 [0, 0, 1, 0.0963+Tb0_z+M0e_z],
-    #                 [0, 0, 0, 1]])
     Tsb = np.array([[np.cos(phi), -np.sin(phi), 0, x],
                     [np.sin(phi), np.cos(phi), 0, y],
                     [0, 0, 1, 0.0963],
                     [0, 0, 0, 1]])
-    # Tb0 is a constant. So is M0e
-    # T0e is not!
     T0e = mr.FKinBody(M0e, Blist, thetalist)
     # From pg 548 of book
     X = Tsb@Tb0@T0e
-    # print(f"Tsb:\n{Tsb}")
-    # X=mr.FKinBody(Tsb, Blist, thetalist)
     return X
 
 dt = 0.01
 joint_threshold = 100
 
+# Kp = np.zeros((6,6))
+Kp = 2*np.identity(6)
+# Ki = np.zeros((6,6))
+Ki = 0.5*np.identity(6)
 
 traj,grips = TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
 n = len(traj)
@@ -526,22 +504,22 @@ theta2 = 0
 theta3 = 0
 theta4 = -1.57
 config = [0,-0.25,0,0,theta2,theta3,theta4,0,0,0,0,0,0]
+# config = [0,0,0,0,0,0,0,0,0,0,0,0,0]
 print(f"START\n{config}")
 saved_configs.append(config)
 for i in range(0,n-1):
-    print('\n')
+    # print('\n')
     # Find Xd, Xd_next from generated trajectory
     Xd = traj[i]
     Xd_next = traj[i+1]
-    print(f"Xd:\n{Xd}")
+    # print(f"Xd:\n{Xd}")
     # print(f"Xd_next:\n{Xd_next}")
     # Find X of current config.
     X = get_X(config)
-    print(f"X:\n{X}")
+    # print(f"X:\n{X}")
     # Calculate new twist based on these Xs
     V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt)
-    print(f"Xerr:\n{Xerr}")
-    # ISSUE which config should this be
+    # print(f"Xerr:\n{Xerr}")
     thetalist = config[3:8]
     Jacobian_arm = mr.JacobianBody(Blist, thetalist)
     T0e = mr.FKinBody(M0e, Blist, thetalist)
@@ -555,11 +533,11 @@ for i in range(0,n-1):
     # print(f"Config:\n{config}")
     # print(f"Controls:\n{controls}")
     config = NextState(config, controls, dt, joint_threshold)
-    print(f"{i}\t{config}")
+    # print(f"{i}\t{config}")
     saved_configs.append(config)
     xerrs.append(Xerr)
 
-np.savetxt('pls.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
+np.savetxt('configs.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
 
 xerrs = np.array(xerrs).T
 
@@ -578,7 +556,7 @@ axs[1].plot(xerrs[3],label='X err')
 axs[1].plot(xerrs[4],label='Y err')
 axs[1].plot(xerrs[5],label='Z err')
 axs[1].legend()
-axs[1].set(xlabel='iteration',ylabel='radians')
+axs[1].set(xlabel='iteration',ylabel='m')
 axs[1].set_title("Linear Error")
 
 fig.tight_layout()
