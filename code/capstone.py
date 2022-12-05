@@ -5,6 +5,7 @@ python3 milestone2.py
 
 import modern_robotics as mr
 import numpy as np
+import matplotlib.pyplot as plt
 
 np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
@@ -417,60 +418,61 @@ def FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt):
     return V, Xerr
 
 
+# Kp = np.zeros((6,6))
+Kp = 2*np.identity(6)
+# Ki = np.zeros((6,6))
+Ki = 1e-2*np.identity(6)
 
 
-# config: phi, x, y, theta1-5
-config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
-x = config[1]
-y = config[2]
-phi = config[0]
-thetalist = config[3:]
-print(f"Thetalist:{thetalist}")
-Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
-                    [np.sin(phi), np.cos(phi), 0, y],
-                    [0, 0, 1, 0.0963],
-                    [0, 0, 0, 1]])
-start_T = np.array(Tsb)
-start_T[0][3] += (Tb0_x+M0e_x)
-start_T[2][3] += (Tb0_z+M0e_z)
-X=mr.FKinBody(start_T, Blist, thetalist)
-print(f"X:\n{X}")
+# # config: phi, x, y, theta1-5
+# config = np.array([0, 0, 0, 0, 0, 0.2, -1.6, 0])
+# x = config[1]
+# y = config[2]
+# phi = config[0]
+# thetalist = config[3:]
+# print(f"Thetalist:{thetalist}")
+# Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+#                     [np.sin(phi), np.cos(phi), 0, y],
+#                     [0, 0, 1, 0.0963],
+#                     [0, 0, 0, 1]])
+# start_T = np.array(Tsb)
+# start_T[0][3] += (Tb0_x+M0e_x)
+# start_T[2][3] += (Tb0_z+M0e_z)
+# X=mr.FKinBody(start_T, Blist, thetalist)
+# print(f"X:\n{X}")
 
-Kp = np.zeros((6,6))
-Kp = np.identity(6)
-Ki = np.zeros((6,6))
-# Ki = 1e-3* np.identity(6)
 
-Xd = np.array([[0, 0, 1, 0.5],
-               [0, 1, 0, 0],
-               [-1, 0, 0, 0.5],
-               [0, 0, 0, 1]])
-Xd_next = np.array([[0, 0, 1, 0.6],
-                    [0, 1, 0, 0],
-                    [-1, 0, 0, 0.3],
-                    [0, 0, 0, 1]])
 
-print("\n\nCONTROLS")
-V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
+# Xd = np.array([[0, 0, 1, 0.5],
+#                [0, 1, 0, 0],
+#                [-1, 0, 0, 0.5],
+#                [0, 0, 0, 1]])
+# Xd_next = np.array([[0, 0, 1, 0.6],
+#                     [0, 1, 0, 0],
+#                     [-1, 0, 0, 0.3],
+#                     [0, 0, 0, 1]])
 
-Jacobian_arm = mr.JacobianBody(Blist, thetalist)
-print(f"Jacobian arm:\n{Jacobian_arm}")
-print(Jacobian_arm.shape)
+# print("\n\nCONTROLS")
+# V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, 0.01)
 
-T0e = mr.FKinBody(M0e, Blist, thetalist)
+# Jacobian_arm = mr.JacobianBody(Blist, thetalist)
+# print(f"Jacobian arm:\n{Jacobian_arm}")
+# print(Jacobian_arm.shape)
 
-Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
-print(f"Jacobian base:\n{Jacobian_base}")
-print(Jacobian_base.shape)
+# T0e = mr.FKinBody(M0e, Blist, thetalist)
 
-Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
-print(f"Jacobian\n{Jacobian}")
-print(Jacobian.shape)
+# Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
+# print(f"Jacobian base:\n{Jacobian_base}")
+# print(Jacobian_base.shape)
 
-Je_pseudoinverse = np.linalg.pinv(Jacobian)
-print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
-new_speeds = Je_pseudoinverse @ V
-print(f"New Speeds:\n{new_speeds}")
+# Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
+# print(f"Jacobian\n{Jacobian}")
+# print(Jacobian.shape)
+
+# Je_pseudoinverse = np.linalg.pinv(Jacobian)
+# print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
+# new_speeds = Je_pseudoinverse @ V
+# print(f"New Speeds:\n{new_speeds}")
 
 
 def get_X(config):
@@ -480,14 +482,11 @@ def get_X(config):
     phi = config[0]
     thetalist = config[3:8]
     # print(f"Thetalist:{thetalist}")
-    Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x],
+    Tsb = np.array([[np.cos(phi), np.sin(phi), 0, x+Tb0_x+M0e_x],
                     [np.sin(phi), np.cos(phi), 0, y],
-                    [0, 0, 1, 0.0963],
+                    [0, 0, 1, 0.0963+Tb0_z+M0e_z],
                     [0, 0, 0, 1]])
-    start_T = np.array(Tsb)
-    start_T[0][3] += (Tb0_x+M0e_x)
-    start_T[2][3] += (Tb0_z+M0e_z)
-    X=mr.FKinBody(start_T, Blist, thetalist)
+    X=mr.FKinBody(Tsb, Blist, thetalist)
     return X
 
 dt = 0.01
@@ -499,6 +498,7 @@ print("\n\nPRINTINGCONFIG\n\n")
 n = len(traj)
 # n = 20
 saved_configs = []
+xerrs = []
 # Starting configuration is first in traj
 # print(f"traj 0\n{traj[0]}")
 # thetalist = [0,0,0,-np.pi/2,0]
@@ -539,5 +539,13 @@ for i in range(0,n-1):
     config = NextState(config, controls, dt, joint_threshold)
     print(f"Config:\n{config}")
     saved_configs.append(config)
+    xerrs.append(Xerr)
 
 np.savetxt('please.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
+
+
+xerrs = np.array(xerrs).T
+for n,i in enumerate(xerrs):
+    plt.plot(i,label=str(n))
+plt.legend()
+plt.show()
