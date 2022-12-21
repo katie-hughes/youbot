@@ -10,6 +10,50 @@ import matplotlib.pyplot as plt
 np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
 
+###################################### SET PARAMS ##################################################
+
+# To run a different config, change one of these to true
+best = False
+overshoot = False
+newblock = False
+new = True
+
+# Default cube xy in s frame.
+cube_initial = [1,0]
+cube_final = [0,-1]
+
+Kp = 2*np.identity(6)
+Ki = 0.5*np.identity(6)
+
+if newblock:
+    print("New Block")
+    cube_initial = [0.5, 0.5]
+    cube_final = [0, -0.5]
+    print(f"New starting block location: {cube_initial}")
+    print(f"New ending block location: {cube_final}")
+
+if overshoot:
+    print("Overshoot")
+    Kp = 170*np.identity(6)
+    Ki = 0*np.identity(6)
+
+if new:
+    print("New")
+    Kp = 0*np.identity(6)
+    Ki = 100*np.identity(6)
+
+if best:
+    print("Best")
+    # This is the default
+    pass
+
+# Starting configuration
+theta2 = 0
+theta3 = 0
+theta4 = 0 # -1.57
+config = [0,-0.5,-0.5,0,theta2,theta3,theta4,0,0,0,0,0,0]
+
+print()
 
 ###################################### MILESTONE 1 #################################################
 
@@ -81,10 +125,10 @@ def NextState(current_config, controls, dt, joint_threshold):
     controls = np.array(controls)
     for i in range(len(controls)):
         if controls[i] > joint_threshold:
-            print("Speed too large")
+            # print("Speed too large")
             controls[i] = joint_threshold
         elif controls[i] < -joint_threshold:
-            print("Speed too small")
+            # print("Speed too small")
             controls[i] = -joint_threshold
     # Extract out specific configs
     current_chassis_config = current_config[:3]
@@ -266,10 +310,8 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
         Tce_standoff: End effector's standoff configuration above the cube, relative to the cube
         k: Number of trajectory configurations per 0.01 seconds. Must be 1 or greater. 
     Returns: 
-        traj : A representation of the N configurations of the end-effector along the entire
-               concatenated 8-segment trajectory. Each point represents a transformation Tse
-               of the end effector frame e relative to s at an instant in time, plus the gripper 
-               state (0, 1).
+        traj : List of transformation matrices describing motion of end effector over trajectory
+        grips: List of gripper state over trajectory
     """
     # Use 5th order polynomial
     method = 5
@@ -287,7 +329,7 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     # 1. Go from Tse_init to Tse_standoff
     print("\nSTEP 1: Move to first standoff")
     Tse_standoff = Tsc_init@Tce_standoff
-    print(Tse_standoff)
+    # print(Tse_standoff)
     T1, N1 = get_T_N(Tse_init, Tse_standoff, speed, freq)
     traj1 = mr.ScrewTrajectory(Tse_init, Tse_standoff, T1, N1, method)
     grip1 = np.full(N1,gripper)
@@ -295,7 +337,7 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     # 2. Go to grasp position. Tse_grasp
     print("\nSTEP 2: Move to grasp")
     Tse_grasp = Tsc_init@Tce_grasp
-    print(Tse_grasp)
+    # print(Tse_grasp)
     T2, N2 = get_T_N(Tse_standoff, Tse_grasp, speed, freq)
     traj2 = mr.CartesianTrajectory(Tse_standoff, Tse_grasp, T2*standoff_scale, N2*standoff_scale, method)
     grip2 = np.full(N2*standoff_scale,gripper)
@@ -317,7 +359,7 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     # 5. New standoff
     print("\nSTEP 5: Move to second standoff")
     Tse_standoff_final = Tsc_final@Tce_standoff
-    print(Tse_standoff_final)
+    # print(Tse_standoff_final)
     T5, N5 = get_T_N(Tse_standoff, Tse_standoff_final, speed, freq)
     traj5 = mr.ScrewTrajectory(Tse_standoff, Tse_standoff_final, T5, N5, method)
     grip5 = np.full(N5,gripper)
@@ -325,7 +367,7 @@ def TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff,
     # 6. Go down
     print("\nSTEP 6: Place the brick down")
     Tse_grasp_final = Tsc_final@Tce_grasp
-    print(Tse_grasp_final)
+    # print(Tse_grasp_final)
     T6, N6 = get_T_N(Tse_standoff_final, Tse_grasp_final, speed, freq)
     traj6 = mr.ScrewTrajectory(Tse_standoff_final, Tse_grasp_final, T6*standoff_scale, N6*standoff_scale, method)
     grip6 = np.full(N6*standoff_scale,gripper)
@@ -356,14 +398,15 @@ Tse_init = np.array([[0, 0, 1, 0],
                      [0, 0, 0, 1]])
 
 # Cube initial position
-Tsc_init = np.array([[1, 0, 0, 1],
-                     [0, 1, 0, 0],
+
+Tsc_init = np.array([[1, 0, 0, cube_initial[0]],
+                     [0, 1, 0, cube_initial[1]],
                      [0, 0, 1, 0],
                      [0, 0, 0, 1]])
 
 # Cube final position
-Tsc_final = np.array([[0, 1, 0, 0],
-                      [-1, 0, 0, -1],
+Tsc_final = np.array([[0, 1, 0, cube_final[0]],
+                      [-1, 0, 0, cube_final[-1]],
                       [0, 0, 1, 0],
                       [0, 0, 0, 1]])
 
@@ -470,7 +513,7 @@ if milestone3:
     new_speeds = Je_pseudoinverse @ V
     print(f"New Speeds:\n{new_speeds}")
 
-###################################### MILESTONE 3 #################################################
+###################################### COMBINED ####################################################
 
 def get_X(config):
     # Take in 13 vector return X
@@ -478,6 +521,7 @@ def get_X(config):
     y = config[2]
     phi = config[0]
     thetalist = config[3:8]
+    # This negative sign took me 4 hours to debug :)
     Tsb = np.array([[np.cos(phi), -np.sin(phi), 0, x],
                     [np.sin(phi), np.cos(phi), 0, y],
                     [0, 0, 1, 0.0963],
@@ -490,52 +534,85 @@ def get_X(config):
 dt = 0.01
 joint_threshold = 100
 
-# Kp = np.zeros((6,6))
-Kp = 2*np.identity(6)
-# Ki = np.zeros((6,6))
-Ki = 0.5*np.identity(6)
 
+
+
+def deg_to_rad(deg):
+    return deg*(np.pi/180.)
+
+# I took these from the YouBot datasheet
+# joint_limits_lower = [-169, -65, -150, -102.5, -167.5]
+# joint_limits_upper = [169,   90,  146,  102.5,  167.5]
+# joint_limits_lower = [deg_to_rad(i) for i in joint_limits_lower]
+# joint_limits_upper = [deg_to_rad(i) for i in joint_limits_upper]
+
+# joint_limits_lower = [None,  None, None, None, None]
+# joint_limits_upper = [None,   0.5,  -0.2,  -0,2,  None]
+
+# I could not get this to reliably work so I have no joint limits :(
+joint_limits_lower = [None,  None, None, None, None]
+joint_limits_upper = [None,  None, None, None,  None]
+
+print(f"Lower Joint Limits: {joint_limits_lower}")
+print(f"Upper Joint Limits: {joint_limits_upper}")
+
+def TestJointLimits(config):
+    violated = [False, False, False, False, False]
+    for j in range(0,5):
+        # print(config[3+j])
+        if joint_limits_lower[j]:
+            if config[3+j]<joint_limits_lower[j]:
+                print(f"Joint {j} too low")
+                config[3+j] = joint_limits_lower[j]
+                violated[j] = True
+        if joint_limits_upper[j]:
+            if config[3+j]>joint_limits_upper[j]:
+                print(f"Joint {j} too high")
+                config[3+j] = joint_limits_upper[j]
+                violated[j] = True
+    return violated
+
+
+print('\nGenerating my reference trajectory:\n')
 traj,grips = TrajectoryGenerator2(Tse_init, Tsc_init, Tsc_final, Tce_grasp, Tce_standoff, k)
 n = len(traj)
-# n = 20
+
 saved_configs = []
 xerrs = []
-theta2 = 0
-theta3 = 0
-theta4 = -1.57
-config = [0,-0.25,0,0,theta2,theta3,theta4,0,0,0,0,0,0]
-# config = [0,0,0,0,0,0,0,0,0,0,0,0,0]
-print(f"START\n{config}")
+print(f"Starting config:\n{config}")
+print("\nGenerating my trajectory based on reference trajectory.\n")
 saved_configs.append(config)
 for i in range(0,n-1):
-    # print('\n')
     # Find Xd, Xd_next from generated trajectory
     Xd = traj[i]
     Xd_next = traj[i+1]
-    # print(f"Xd:\n{Xd}")
-    # print(f"Xd_next:\n{Xd_next}")
     # Find X of current config.
     X = get_X(config)
-    # print(f"X:\n{X}")
     # Calculate new twist based on these Xs
     V, Xerr = FeedbackControl(X, Xd, Xd_next, Kp, Ki, dt)
-    # print(f"Xerr:\n{Xerr}")
     thetalist = config[3:8]
     Jacobian_arm = mr.JacobianBody(Blist, thetalist)
+    # Test joint limits
+    violated = TestJointLimits(config)
+    # Change jacobian arm if any limits violated
+    if any(violated):
+        for j,v in enumerate(violated):
+            if v:
+                print(f"Change jacobian col {j}")
+                Jacobian_arm[:, j] = np.full(6,1e-3)
     T0e = mr.FKinBody(M0e, Blist, thetalist)
     Jacobian_base = mr.Adjoint(mr.TransInv(T0e)@mr.TransInv(Tb0))@F6
     Jacobian = np.hstack((Jacobian_base, Jacobian_arm))
     Je_pseudoinverse = np.linalg.pinv(Jacobian)
-    # print(f"PSEUDOINVERSE:\n{Je_pseudoinverse}")
     controls = Je_pseudoinverse @ V
-    # Go to next state. Update config with NextState
+    # Go to next state. Update config with NextState. Update grip state too.
     config[12] = grips[i]
-    # print(f"Config:\n{config}")
-    # print(f"Controls:\n{controls}")
     config = NextState(config, controls, dt, joint_threshold)
     # print(f"{i}\t{config}")
     saved_configs.append(config)
     xerrs.append(Xerr)
+
+print("\nDone! Saving .csv files.\n")
 
 np.savetxt('configs.csv', np.array(saved_configs), fmt='%10.5f', delimiter=',')
 

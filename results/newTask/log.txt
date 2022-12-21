@@ -1,0 +1,33 @@
+New Block
+New starting block location: [0.5, 0.5]
+New ending block location: [0, -0.5]
+
+Lower Joint Limits: [None, None, None, None, None]
+Upper Joint Limits: [None, None, None, None, None]
+
+Generating my reference trajectory:
+
+
+STEP 1: Move to first standoff
+
+STEP 2: Move to grasp
+
+STEP 3: Grasp
+
+STEP 4: Move back to standoff
+
+STEP 5: Move to second standoff
+
+STEP 6: Place the brick down
+
+STEP 7: Release gripper
+
+STEP 8: Go back to standoff
+Starting config:
+[0, -0.5, -0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+Generating my trajectory based on reference trajectory.
+
+
+Done! Saving .csv files.
+
